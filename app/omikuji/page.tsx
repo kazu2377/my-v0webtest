@@ -1,5 +1,5 @@
 import { OmikujiResult } from "./OmikujiResult";
-
+import { handleServerAction } from "./actions";
 const monsters = [
   "リオレウス",
   "ラージャン",
@@ -25,6 +25,7 @@ export default function OmikujiPage() {
 
   async function handleOmikuji() {
     "use server";
+    console.log("use serverサーバーサイド");
     return drawOmikuji();
   }
 
@@ -33,6 +34,7 @@ export default function OmikujiPage() {
       <OmikujiResult
         initialResult={initialResult}
         handleOmikuji={handleOmikuji}
+        handleServerAction={handleServerAction}
       />
     </div>
   );

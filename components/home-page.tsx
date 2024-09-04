@@ -1,8 +1,15 @@
-'use client'
+// "use client";
 
-import { Phone, Mail, ArrowRight, Check } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowRight, Mail, Phone } from "lucide-react";
+
+const log = 500;
+console.log(log);
+
+async function handleOmikuji() {
+  console.log("use server2");
+}
 
 export function HomePage() {
   return (
@@ -14,10 +21,26 @@ export function HomePage() {
             <div className="text-2xl font-bold">EOSファーム</div>
             <nav>
               <ul className="flex space-x-4">
-                <li><a href="#" className="hover:underline">ホーム</a></li>
-                <li><a href="#" className="hover:underline">事業内容</a></li>
-                <li><a href="#" className="hover:underline">会社概要</a></li>
-                <li><a href="#" className="hover:underline">お問い合わせ</a></li>
+                <li>
+                  <a href="#" className="hover:underline">
+                    ホーム
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="hover:underline">
+                    事業内容
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="hover:underline">
+                    会社概要
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="hover:underline">
+                    お問い合わせ
+                  </a>
+                </li>
               </ul>
             </nav>
           </div>
@@ -29,7 +52,9 @@ export function HomePage() {
         <div className="container mx-auto px-4">
           <div className="max-w-2xl">
             <h1 className="text-4xl font-bold mb-4">未来の農業を創造する</h1>
-            <p className="text-xl mb-8">EOSファームは、最先端のテクノロジーと伝統的な農業の知恵を融合させ、持続可能な食糧生産の未来を切り開きます。</p>
+            <p className="text-xl mb-8">
+              EOSファームは、最先端のテクノロジーと伝統的な農業の知恵を融合させ、持続可能な食糧生産の未来を切り開きます。
+            </p>
             <Button className="bg-white text-[#FFA500] hover:bg-gray-100">
               詳細を見る
               <ArrowRight className="ml-2 h-4 w-4" />
@@ -48,11 +73,25 @@ export function HomePage() {
             preserveAspectRatio="none"
           >
             <defs>
-              <radialGradient id="gradient1" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+              <radialGradient
+                id="gradient1"
+                cx="50%"
+                cy="50%"
+                r="50%"
+                fx="50%"
+                fy="50%"
+              >
                 <stop offset="0%" stopColor="#FFA500" stopOpacity="0.3" />
                 <stop offset="100%" stopColor="#FFA500" stopOpacity="0" />
               </radialGradient>
-              <radialGradient id="gradient2" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+              <radialGradient
+                id="gradient2"
+                cx="50%"
+                cy="50%"
+                r="50%"
+                fx="50%"
+                fy="50%"
+              >
                 <stop offset="0%" stopColor="#FFD700" stopOpacity="0.3" />
                 <stop offset="100%" stopColor="#FFD700" stopOpacity="0" />
               </radialGradient>
@@ -84,14 +123,16 @@ export function HomePage() {
             <h2 className="text-3xl font-bold">Business</h2>
           </div>
           <h3 className="text-2xl font-semibold mb-8">EOSファームの事業内容</h3>
-          
+
           <div className="grid md:grid-cols-2 gap-8">
             <Card>
               <CardHeader>
                 <CardTitle>スマート農業ソリューション</CardTitle>
               </CardHeader>
               <CardContent>
-                <p>IoTセンサーとAIを活用した農業管理システムを提供し、効率的な栽培と収穫を実現します。</p>
+                <p>
+                  IoTセンサーとAIを活用した農業管理システムを提供し、効率的な栽培と収穫を実現します。
+                </p>
               </CardContent>
             </Card>
             <Card>
@@ -99,7 +140,9 @@ export function HomePage() {
                 <CardTitle>有機農産物の生産・販売</CardTitle>
               </CardHeader>
               <CardContent>
-                <p>化学肥料や農薬を使用せず、環境に配慮した有機農法で高品質な農産物を生産・販売しています。</p>
+                <p>
+                  化学肥料や農薬を使用せず、環境に配慮した有機農法で高品質な農産物を生産・販売しています。
+                </p>
               </CardContent>
             </Card>
             <Card>
@@ -107,7 +150,9 @@ export function HomePage() {
                 <CardTitle>農業コンサルティング</CardTitle>
               </CardHeader>
               <CardContent>
-                <p>長年の経験と最新の技術知識を活かし、農業経営の効率化や収益向上のアドバイスを提供します。</p>
+                <p>
+                  長年の経験と最新の技術知識を活かし、農業経営の効率化や収益向上のアドバイスを提供します。
+                </p>
               </CardContent>
             </Card>
             <Card>
@@ -115,7 +160,9 @@ export function HomePage() {
                 <CardTitle>農業体験プログラム</CardTitle>
               </CardHeader>
               <CardContent>
-                <p>都市部の方々に農業の魅力を伝えるため、収穫体験や農業教室などのプログラムを実施しています。</p>
+                <p>
+                  都市部の方々に農業の魅力を伝えるため、収穫体験や農業教室などのプログラムを実施しています。
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -158,10 +205,26 @@ export function HomePage() {
             <div className="w-full md:w-1/3 mb-6 md:mb-0">
               <h3 className="text-xl font-bold mb-2">リンク</h3>
               <ul className="space-y-2">
-                <li><a href="#" className="hover:underline">ホーム</a></li>
-                <li><a href="#" className="hover:underline">事業内容</a></li>
-                <li><a href="#" className="hover:underline">会社概要</a></li>
-                <li><a href="#" className="hover:underline">お問い合わせ</a></li>
+                <li>
+                  <a href="#" className="hover:underline">
+                    ホーム
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="hover:underline">
+                    事業内容
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="hover:underline">
+                    会社概要
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="hover:underline">
+                    お問い合わせ
+                  </a>
+                </li>
               </ul>
             </div>
             <div className="w-full md:w-1/3">
@@ -211,5 +274,5 @@ export function HomePage() {
         </div>
       </footer>
     </div>
-  )
+  );
 }
