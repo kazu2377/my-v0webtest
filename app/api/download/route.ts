@@ -6,12 +6,7 @@ import archiver from "archiver";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { NextRequest, NextResponse } from "next/server";
-import pLimit from "p-limit";
-import stream from "stream";
-import { promisify } from "util";
-import { v4 as uuidv4 } from "uuid";
-
-const pipeline = promisify(stream.pipeline);
+import { Readable } from "stream";
 
 interface DownloadRequestBody {
   baseUrl: string;
@@ -93,98 +88,65 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ダウンロード数の制限
-    const MAX_PDF = 50;
-    if (pdfLinks.length > MAX_PDF) {
-      pdfLinks = pdfLinks.slice(0, MAX_PDF);
-      console.warn(
-        `PDFリンクが${MAX_PDF}件を超えたため、最初の${MAX_PDF}件のみ処理します。`
-      );
-    }
+    // 最大3つのPDFに制限
+    const MAX_PDF = 3;
+    pdfLinks = pdfLinks.slice(0, MAX_PDF);
+    console.log(`処理するPDFの数: ${pdfLinks.length}`);
 
-    // ZIPファイルをバッファとして生成
-    console.log("ZIPファイルを生成中...");
+    // ZIPファイルをストリームとして生成
     const archive = archiver("zip", {
       zlib: { level: 9 }, // 圧縮レベル
     });
 
-    // バッファを蓄積するための配列
-    const chunks: Buffer[] = [];
+    // ストリームを作成
+    const stream = new Readable();
+    stream._read = () => {}; // 必要に応じて実装
 
-    // アーカイブのエラーハンドリング
-    archive.on("error", (err) => {
-      console.error("アーカイブエラー:", err);
-      throw err;
-    });
-
-    // データが流れてくるたびにバッファに追加
     archive.on("data", (chunk) => {
-      chunks.push(chunk);
+      stream.push(chunk);
     });
 
-    // アーカイブが完了したらバッファを結合
-    const archivePromise = new Promise<Buffer>((resolve, reject) => {
-      archive.on("end", () => {
-        const buffer = Buffer.concat(chunks);
-        resolve(buffer);
-      });
-
-      archive.on("error", (err) => {
-        reject(err);
-      });
+    archive.on("end", () => {
+      stream.push(null);
     });
 
-    // 並列ダウンロードの制御
-    const limit = pLimit(5); // 同時に5つのリクエストを実行
+    // PDFのダウンロードとZIPへの追加
+    for (const pdfUrl of pdfLinks) {
+      try {
+        console.log(`PDFをダウンロード中: ${pdfUrl}`);
+        const pdfResponse = await axios.get(pdfUrl, {
+          responseType: "arraybuffer",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+          },
+        });
 
-    const downloadPromises = pdfLinks.map((pdfUrl) =>
-      limit(async () => {
-        try {
-          console.log(`PDFをダウンロード中: ${pdfUrl}`);
-          const pdfResponse = await axios.get(pdfUrl, {
-            responseType: "stream",
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            },
-          });
+        // ファイル名をURLから取得
+        const url = new URL(pdfUrl);
+        let fileName = url.pathname.split("/").pop() || "file.pdf";
+        fileName = decodeURIComponent(fileName.split("?")[0]); // クエリパラメータを除去
 
-          // ファイル名をURLから取得し、一意にする
-          const url = new URL(pdfUrl);
-          let fileName = url.pathname.split("/").pop() || "file.pdf";
-          fileName = decodeURIComponent(fileName.split("?")[0]); // クエリパラメータを除去
-          fileName = `${uuidv4()}_${fileName}`; // UUIDをファイル名に追加
-
-          console.log(`アーカイブに追加: ${fileName}`);
-          // アーカイブにPDFを追加
-          archive.append(pdfResponse.data, { name: fileName });
-        } catch (err: any) {
-          console.error(
-            `PDFのダウンロード中にエラーが発生しました (${pdfUrl}):`,
-            err.message
-          );
-          // エラーが発生したPDFはスキップ
-        }
-      })
-    );
-
-    // すべてのPDFのダウンロードとアーカイブへの追加を待つ
-    await Promise.all(downloadPromises);
+        console.log(`アーカイブに追加: ${fileName}`);
+        // アーカイブにPDFを追加
+        archive.append(pdfResponse.data, { name: fileName });
+      } catch (err: any) {
+        console.error(
+          `PDFのダウンロード中にエラーが発生しました (${pdfUrl}):`,
+          err.message
+        );
+        // エラーが発生したPDFはスキップ
+      }
+    }
 
     // アーカイブの完了
     console.log("アーカイブを完了します。");
     archive.finalize();
 
-    // ZIPファイルのバッファを取得
-    const archiveBuffer = await archivePromise;
-
-    console.log("ZIPファイルの生成が完了しました。");
-
-    // ZIPファイルをレスポンスとして返す
-    return new NextResponse(archiveBuffer, {
+    // ストリーミングレスポンスを返す
+    return new NextResponse(stream as any, {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": 'attachment; filename="pdf_files.zip"',
-        "Content-Length": archiveBuffer.length.toString(),
       },
     });
   } catch (err: any) {
