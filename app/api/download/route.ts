@@ -7,8 +7,11 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { NextRequest, NextResponse } from "next/server";
 import pLimit from "p-limit";
-import { PassThrough } from "stream";
+import stream from "stream";
+import { promisify } from "util";
 import { v4 as uuidv4 } from "uuid";
+
+const pipeline = promisify(stream.pipeline);
 
 interface DownloadRequestBody {
   baseUrl: string;
@@ -25,6 +28,7 @@ export async function POST(req: NextRequest) {
     console.log(`targetUrl: ${targetUrl}`);
 
     if (!baseUrl || !targetUrl) {
+      console.error("baseUrl と targetUrl が提供されていません。");
       return NextResponse.json(
         { message: "baseUrl と targetUrl は必須です。" },
         { status: 400 }
@@ -44,6 +48,7 @@ export async function POST(req: NextRequest) {
     };
 
     if (!isAllowedDomain(targetUrl) || !isAllowedDomain(baseUrl)) {
+      console.error("許可されていないドメインです。");
       return NextResponse.json(
         { message: "許可されていないドメインです。" },
         { status: 400 }
@@ -51,6 +56,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ターゲットページの取得
+    console.log(`ターゲットページを取得中: ${targetUrl}`);
     const response = await axios.get(targetUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -69,7 +75,6 @@ export async function POST(req: NextRequest) {
           const fullUrl = new URL(href, baseUrl).href;
           pdfLinks.push(fullUrl);
         } catch (err) {
-          // 無効なURLはスキップ
           console.warn(`無効なURLをスキップしました: ${href}`);
         }
       }
@@ -81,6 +86,7 @@ export async function POST(req: NextRequest) {
     pdfLinks = Array.from(new Set(pdfLinks));
 
     if (pdfLinks.length === 0) {
+      console.error("ダウンロード可能なPDFリンクが見つかりませんでした。");
       return NextResponse.json(
         { message: "ダウンロード可能なPDFリンクが見つかりませんでした。" },
         { status: 404 }
@@ -96,27 +102,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // レスポンスヘッダーを設定してZIPファイルとして送信
-    const headers = {
-      "Content-Type": "application/zip",
-      "Content-Disposition": 'attachment; filename="pdf_files.zip"',
-    };
-
-    const passThrough = new PassThrough();
+    // ZIPファイルをバッファとして生成
+    console.log("ZIPファイルを生成中...");
     const archive = archiver("zip", {
       zlib: { level: 9 }, // 圧縮レベル
     });
 
+    // バッファを蓄積するための配列
+    const chunks: Buffer[] = [];
+
+    // アーカイブのエラーハンドリング
     archive.on("error", (err) => {
       console.error("アーカイブエラー:", err);
       throw err;
     });
 
-    // アーカイブをストリームにパイプ
-    archive.pipe(passThrough);
+    // データが流れてくるたびにバッファに追加
+    archive.on("data", (chunk) => {
+      chunks.push(chunk);
+    });
+
+    // アーカイブが完了したらバッファを結合
+    const archivePromise = new Promise<Buffer>((resolve, reject) => {
+      archive.on("end", () => {
+        const buffer = Buffer.concat(chunks);
+        resolve(buffer);
+      });
+
+      archive.on("error", (err) => {
+        reject(err);
+      });
+    });
 
     // 並列ダウンロードの制御
-    const limit = pLimit(2); // 同時に5つのリクエストを実行
+    const limit = pLimit(5); // 同時に5つのリクエストを実行
 
     const downloadPromises = pdfLinks.map((pdfUrl) =>
       limit(async () => {
@@ -135,6 +154,7 @@ export async function POST(req: NextRequest) {
           fileName = decodeURIComponent(fileName.split("?")[0]); // クエリパラメータを除去
           fileName = `${uuidv4()}_${fileName}`; // UUIDをファイル名に追加
 
+          console.log(`アーカイブに追加: ${fileName}`);
           // アーカイブにPDFを追加
           archive.append(pdfResponse.data, { name: fileName });
         } catch (err: any) {
@@ -147,28 +167,26 @@ export async function POST(req: NextRequest) {
       })
     );
 
+    // すべてのPDFのダウンロードとアーカイブへの追加を待つ
     await Promise.all(downloadPromises);
 
     // アーカイブの完了
+    console.log("アーカイブを完了します。");
     archive.finalize();
 
-    // Node.jsのPassThroughストリームをWebのReadableStreamに変換
-    const readableStream = new ReadableStream({
-      start(controller) {
-        passThrough.on("data", (chunk) => {
-          controller.enqueue(chunk);
-        });
-        passThrough.on("end", () => {
-          controller.close();
-        });
-        passThrough.on("error", (err) => {
-          controller.error(err);
-        });
+    // ZIPファイルのバッファを取得
+    const archiveBuffer = await archivePromise;
+
+    console.log("ZIPファイルの生成が完了しました。");
+
+    // ZIPファイルをレスポンスとして返す
+    return new NextResponse(archiveBuffer, {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": 'attachment; filename="pdf_files.zip"',
+        "Content-Length": archiveBuffer.length.toString(),
       },
     });
-
-    // ストリームをレスポンスとして返す
-    return new NextResponse(readableStream, { headers });
   } catch (err: any) {
     console.error("サーバーエラー:", err);
     return NextResponse.json(
