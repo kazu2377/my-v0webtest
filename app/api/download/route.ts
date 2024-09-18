@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
     archive.pipe(passThrough);
 
     // 並列ダウンロードの制御
-    const limit = pLimit(5); // 同時に5つのリクエストを実行
+    const limit = pLimit(2); // 同時に5つのリクエストを実行
 
     const downloadPromises = pdfLinks.map((pdfUrl) =>
       limit(async () => {
