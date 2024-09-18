@@ -1,11 +1,10 @@
 // app/api/download/route.ts
 
-// Node.jsランタイムを指定
 export const runtime = "nodejs";
 
 import archiver from "archiver";
 import axios from "axios";
-import * as cheerio from "cheerio"; // 修正済み
+import * as cheerio from "cheerio";
 import { NextRequest, NextResponse } from "next/server";
 import pLimit from "p-limit";
 import { PassThrough } from "stream";
@@ -59,7 +58,7 @@ export async function POST(req: NextRequest) {
     });
 
     const html = response.data;
-    const $ = cheerio.load(html); // 修正後
+    const $ = cheerio.load(html);
 
     // すべての<a>タグを取得し、hrefに.pdfが含まれるものを抽出
     let pdfLinks: string[] = [];
@@ -103,7 +102,7 @@ export async function POST(req: NextRequest) {
       "Content-Disposition": 'attachment; filename="pdf_files.zip"',
     };
 
-    const stream = new PassThrough();
+    const passThrough = new PassThrough();
     const archive = archiver("zip", {
       zlib: { level: 9 }, // 圧縮レベル
     });
@@ -114,7 +113,7 @@ export async function POST(req: NextRequest) {
     });
 
     // アーカイブをストリームにパイプ
-    archive.pipe(stream);
+    archive.pipe(passThrough);
 
     // 並列ダウンロードの制御
     const limit = pLimit(5); // 同時に5つのリクエストを実行
@@ -153,12 +152,27 @@ export async function POST(req: NextRequest) {
     // アーカイブの完了
     archive.finalize();
 
+    // Node.jsのPassThroughストリームをWebのReadableStreamに変換
+    const readableStream = new ReadableStream({
+      start(controller) {
+        passThrough.on("data", (chunk) => {
+          controller.enqueue(chunk);
+        });
+        passThrough.on("end", () => {
+          controller.close();
+        });
+        passThrough.on("error", (err) => {
+          controller.error(err);
+        });
+      },
+    });
+
     // ストリームをレスポンスとして返す
-    return new NextResponse(stream, { headers });
+    return new NextResponse(readableStream, { headers });
   } catch (err: any) {
     console.error("サーバーエラー:", err);
     return NextResponse.json(
-      { message: "サーバー内部でエラーが発生しました。" },
+      { message: `サーバー内部でエラーが発生しました。詳細: ${err.message}` },
       { status: 500 }
     );
   }
