@@ -69,7 +69,7 @@ const Home: React.FC = () => {
           />
         </div>
         <div style={styles.formGroup}>
-          <label htmlFor="targetUrl">ターゲットページURL：：</label>
+          <label htmlFor="targetUrl">ターゲットページURL：</label>
           <input
             id="targetUrl"
             type="text"
