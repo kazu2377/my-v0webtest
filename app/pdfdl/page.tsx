@@ -1,21 +1,23 @@
-// app/page.tsx
-
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { FormEvent, useState } from "react";
 
-const Home: React.FC = () => {
+export default function Home() {
   const [baseUrl, setBaseUrl] = useState<string>("https://jsite.mhlw.go.jp");
   const [targetUrl, setTargetUrl] = useState<string>(
     "https://jsite.mhlw.go.jp/tokyo-roudoukyoku/newpage_00139.html"
   );
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
+  const [progress, setProgress] = useState<number>(0);
 
   const handleDownload = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setProgress(0);
 
     try {
       const response = await fetch("/api/download", {
@@ -27,18 +29,24 @@ const Home: React.FC = () => {
       });
 
       if (!response.ok) {
-        let errorMessage = "ダウンロード中にエラーが発生しました。";
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || errorMessage;
-        } catch (jsonError) {
-          console.error("JSONの解析に失敗しました:", jsonError);
-        }
-        throw new Error(errorMessage);
+        throw new Error("ダウンロード中にエラーが発生しました。");
       }
 
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(new Blob([blob]));
+      const reader = response.body?.getReader();
+      const contentLength = +(response.headers.get("Content-Length") ?? "0");
+      let receivedLength = 0;
+      const chunks = [];
+
+      while (true) {
+        const { done, value } = await reader!.read();
+        if (done) break;
+        chunks.push(value);
+        receivedLength += value.length;
+        setProgress((receivedLength / contentLength) * 100);
+      }
+
+      const blob = new Blob(chunks);
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute("download", "pdf_files.zip");
@@ -54,73 +62,57 @@ const Home: React.FC = () => {
   };
 
   return (
-    <div style={styles.container}>
-      <h1>PDFダウンローダー</h1>
-      <form onSubmit={handleDownload}>
-        <div style={styles.formGroup}>
-          <label htmlFor="baseUrl">ベースURL:</label>
-          <input
+    <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-md">
+      <h1 className="text-2xl font-bold mb-6 text-center">PDFダウンローダー</h1>
+      <form onSubmit={handleDownload} className="space-y-4">
+        <div>
+          <label
+            htmlFor="baseUrl"
+            className="block text-sm font-medium text-gray-700"
+          >
+            ベースURL:
+          </label>
+          <Input
             id="baseUrl"
             type="text"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            style={styles.input}
             required
           />
         </div>
-        <div style={styles.formGroup}>
-          <label htmlFor="targetUrl">ターゲットページURL：</label>
-          <input
+        <div>
+          <label
+            htmlFor="targetUrl"
+            className="block text-sm font-medium text-gray-700"
+          >
+            ターゲットページURL：
+          </label>
+          <Input
             id="targetUrl"
             type="text"
             value={targetUrl}
             onChange={(e) => setTargetUrl(e.target.value)}
-            style={styles.input}
             required
           />
         </div>
-        {error && <p style={styles.error}>{error}</p>}
-        <button type="submit" style={styles.button} disabled={loading}>
+        {error && <p className="text-red-500">{error}</p>}
+        <Button type="submit" className="w-full" disabled={loading}>
           {loading ? "ダウンロード中..." : "ダウンロード"}
-        </button>
+        </Button>
       </form>
+      {loading && (
+        <div className="mt-4">
+          <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
+            <div
+              className="bg-blue-600 h-2.5 rounded-full"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+          <p className="text-center mt-2">
+            {progress.toFixed(2)}% ダウンロード完了
+          </p>
+        </div>
+      )}
     </div>
   );
-};
-
-const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    maxWidth: "600px",
-    margin: "50px auto",
-    padding: "20px",
-    textAlign: "center",
-    border: "1px solid #ccc",
-    borderRadius: "8px",
-    fontFamily: "Arial, sans-serif",
-  },
-  formGroup: {
-    margin: "20px 0",
-    textAlign: "left",
-  },
-  input: {
-    width: "100%",
-    padding: "10px",
-    marginTop: "5px",
-    borderRadius: "4px",
-    border: "1px solid #ccc",
-  },
-  button: {
-    padding: "10px 20px",
-    fontSize: "16px",
-    borderRadius: "4px",
-    border: "none",
-    backgroundColor: "#0070f3",
-    color: "#fff",
-    cursor: "pointer",
-  },
-  error: {
-    color: "red",
-  },
-};
-
-export default Home;
+}

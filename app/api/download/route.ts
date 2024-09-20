@@ -39,17 +39,9 @@ export async function POST(req: NextRequest) {
       stream.destroy(err);
     });
 
-    // レスポンスとしてパススルーストリームを返す
-    const responseStream = new Response(stream as any, {
-      headers: {
-        "Content-Type": "application/zip",
-        "Content-Disposition": "attachment; filename=pdf_files.zip",
-      },
-    });
-
     // 非同期でファイルを追加
     (async () => {
-      const batchSize = 3;
+      const batchSize = 5;
       for (let i = 0; i < pdfUrls.length; i += batchSize) {
         const batch = pdfUrls.slice(i, i + batchSize);
 
@@ -67,9 +59,9 @@ export async function POST(req: NextRequest) {
               const fileName = decodeURIComponent(
                 pdfUrl.split("/").pop() || "file.pdf"
               );
-              archive.append(Buffer.from(await pdfResponse.arrayBuffer()), {
-                name: fileName,
-              });
+              const pdfBuffer = await pdfResponse.arrayBuffer();
+              archive.append(Buffer.from(pdfBuffer), { name: fileName });
+              console.log(`Added ${fileName} to archive`);
             } catch (err) {
               console.error(`Error processing ${pdfUrl}:`, err);
             }
@@ -78,11 +70,17 @@ export async function POST(req: NextRequest) {
       }
 
       // すべてのファイルを追加し終えたら、アーカイブを終了
-      archive.finalize();
+      await archive.finalize();
+      console.log("Archive finalized");
     })();
 
-    // レスポンスを返す
-    return responseStream;
+    // レスポンスとしてパススルーストリームを返す
+    return new Response(stream as any, {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": "attachment; filename=pdf_files.zip",
+      },
+    });
   } catch (error: any) {
     console.error("エラー:", error);
     return NextResponse.json({ message: error.message }, { status: 500 });
