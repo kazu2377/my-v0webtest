@@ -1,12 +1,13 @@
 // app/api/download-pdfs/route.ts
 
 import archiver from "archiver";
-import * as cheerio from "cheerio"; // 修正ポイント
+import * as cheerio from "cheerio";
 import fsExtra from "fs-extra";
 import { NextResponse } from "next/server";
 import fetch from "node-fetch";
-import schedule from "node-schedule";
+import { scheduleJob } from "node-schedule";
 import path from "path";
+import { Readable } from "stream";
 import { v4 as uuidv4 } from "uuid";
 
 // 一時保存ディレクトリのパス
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
 
     if (!baseUrl || !targetUrl) {
       return NextResponse.json(
-        { error: "baseUrl and targetUrl are required" },
+        { error: "baseUrlとtargetUrlは必須です" },
         { status: 400 }
       );
     }
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
 
     if (pdfUrls.length === 0) {
       return NextResponse.json(
-        { error: "No PDF links found at the target URL" },
+        { error: "対象URLにPDFリンクが見つかりませんでした" },
         { status: 404 }
       );
     }
@@ -56,11 +57,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ downloadUrl }, { status: 200 });
   } catch (error) {
-    console.error("Error in /api/download-pdfs:", error);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 }
-    );
+    console.error("/api/download-pdfsでエラーが発生しました:", error);
+    return NextResponse.json({ error: "内部サーバーエラー" }, { status: 500 });
   }
 }
 
@@ -72,11 +70,11 @@ async function extractPdfLinks(
   try {
     const response = await fetch(targetUrl);
     if (!response.ok) {
-      throw new Error(`Failed to fetch target URL: ${response.statusText}`);
+      throw new Error(`対象URLの取得に失敗しました: ${response.statusText}`);
     }
 
     const html = await response.text();
-    const $ = cheerio.load(html); // cheerio.loadがundefinedにならないように修正
+    const $ = cheerio.load(html);
     const pdfLinks: string[] = [];
 
     $('a[href$=".pdf"]').each((_, element) => {
@@ -89,7 +87,7 @@ async function extractPdfLinks(
 
     return pdfLinks;
   } catch (err) {
-    console.error("Error extracting PDF links:", err);
+    console.error("PDFリンクの抽出中にエラーが発生しました:", err);
     return [];
   }
 }
@@ -104,13 +102,13 @@ async function createZipArchive(pdfUrls: string[], archivePath: string) {
 
     output.on("close", () => {
       console.log(
-        `Archive ${archivePath} has been finalized. Total size: ${archive.pointer()} bytes`
+        `アーカイブ ${archivePath} が完成しました。合計サイズ: ${archive.pointer()} バイト`
       );
       resolve();
     });
 
     archive.on("error", (err) => {
-      console.error("Archiver error:", err);
+      console.error("Archiverエラー:", err);
       reject(err);
     });
 
@@ -132,7 +130,7 @@ async function createZipArchive(pdfUrls: string[], archivePath: string) {
             try {
               const response = await fetch(pdfUrl);
               if (!response.ok) {
-                console.error(`Failed to download ${pdfUrl}`);
+                console.error(`${pdfUrl} のダウンロードに失敗しました`);
                 return;
               }
 
@@ -140,33 +138,36 @@ async function createZipArchive(pdfUrls: string[], archivePath: string) {
                 path.basename(new URL(pdfUrl).pathname) || "file.pdf"
               );
 
-              // PDFデータをストリームとしてアーカイブに追加
-              archive.append(response.body as NodeJS.ReadableStream, {
-                name: fileName,
-              });
-              console.log(`Added ${fileName} to archive`);
+              if (response.body) {
+                // Node.js Readableストリームに変換
+                const nodeReadable = Readable.from(response.body as any);
+                archive.append(nodeReadable, { name: fileName });
+                console.log(`${fileName} をアーカイブに追加しました`);
+              } else {
+                console.error(`${pdfUrl} のレスポンスにbodyがありません`);
+              }
             } catch (err) {
-              console.error(`Error processing ${pdfUrl}:`, err);
+              console.error(`${pdfUrl} の処理中にエラーが発生しました:`, err);
             }
           })
         );
 
-        console.log(`Processed batch up to index ${currentIndex}`);
+        console.log(`インデックス ${currentIndex} までのバッチを処理しました`);
       }
 
       // すべてのファイルを追加し終えたら、アーカイブを終了
       archive.finalize();
-      console.log("Archive finalized");
+      console.log("アーカイブが完成しました");
 
       // ZIPファイル作成後に24時間後に削除するジョブをスケジュール
       const deleteTime = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24時間後
 
-      schedule.scheduleJob(deleteTime, async () => {
+      scheduleJob(deleteTime, async () => {
         try {
           await fsExtra.unlink(archivePath);
-          console.log(`Deleted archive ${archivePath} after 24 hours`);
+          console.log(`24時間後にアーカイブ ${archivePath} を削除しました`);
         } catch (err) {
-          console.error(`Failed to delete archive ${archivePath}:`, err);
+          console.error(`アーカイブ ${archivePath} の削除に失敗しました:`, err);
         }
       });
     })();
