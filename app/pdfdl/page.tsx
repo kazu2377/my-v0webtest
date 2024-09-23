@@ -1,26 +1,26 @@
+// app/page.tsx
+
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 
-export default function Home() {
+const DownloadButton = () => {
   const [baseUrl, setBaseUrl] = useState<string>("https://jsite.mhlw.go.jp");
   const [targetUrl, setTargetUrl] = useState<string>(
     "https://jsite.mhlw.go.jp/tokyo-roudoukyoku/newpage_00139.html"
   );
+  const [downloadLink, setDownloadLink] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
-  const [progress, setProgress] = useState<number>(0);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleDownload = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleDownload = async () => {
     setLoading(true);
-    setError("");
-    setProgress(0);
+    setError(null);
+    setDownloadLink(null);
 
     try {
       const response = await fetch("/api/download", {
+        // 正しい相対パスを使用
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -28,91 +28,73 @@ export default function Home() {
         body: JSON.stringify({ baseUrl, targetUrl }),
       });
 
-      if (!response.ok) {
-        throw new Error("ダウンロード中にエラーが発生しました。");
+      // レスポンスがJSONかどうかを確認
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to create archive");
+        }
+
+        setDownloadLink(data.downloadUrl);
+      } else {
+        // JSON以外のレスポンス（エラーページなど）が返ってきた場合
+        const text = await response.text();
+        throw new Error("Unexpected response from server: " + text);
       }
-
-      const reader = response.body?.getReader();
-      const contentLength = +(response.headers.get("Content-Length") ?? "0");
-      let receivedLength = 0;
-      const chunks = [];
-
-      while (true) {
-        const { done, value } = await reader!.read();
-        if (done) break;
-        chunks.push(value);
-        receivedLength += value.length;
-        setProgress((receivedLength / contentLength) * 100);
-      }
-
-      const blob = new Blob(chunks);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", "pdf_files.zip");
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode?.removeChild(link);
     } catch (err: any) {
-      setError(err.message);
-      console.error("ダウンロードエラー:", err);
+      console.error("Error:", err);
+      setError(err.message || "An error occurred");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-md">
-      <h1 className="text-2xl font-bold mb-6 text-center">PDFダウンローダー</h1>
-      <form onSubmit={handleDownload} className="space-y-4">
-        <div>
-          <label
-            htmlFor="baseUrl"
-            className="block text-sm font-medium text-gray-700"
-          >
-            ベースURL:
-          </label>
-          <Input
-            id="baseUrl"
+    <div style={{ padding: "20px" }}>
+      <h1>PDFダウンロードとZIPアーカイブ作成</h1>
+      <div style={{ marginBottom: "10px" }}>
+        <label>
+          Base URL:
+          <input
             type="text"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            required
+            style={{ width: "100%", padding: "8px", marginTop: "5px" }}
           />
-        </div>
-        <div>
-          <label
-            htmlFor="targetUrl"
-            className="block text-sm font-medium text-gray-700"
-          >
-            ターゲットページURL：
-          </label>
-          <Input
-            id="targetUrl"
+        </label>
+      </div>
+      <div style={{ marginBottom: "10px" }}>
+        <label>
+          Target URL:
+          <input
             type="text"
             value={targetUrl}
             onChange={(e) => setTargetUrl(e.target.value)}
-            required
+            style={{ width: "100%", padding: "8px", marginTop: "5px" }}
           />
-        </div>
-        {error && <p className="text-red-500">{error}</p>}
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? "ダウンロード中..." : "ダウンロード"}
-        </Button>
-      </form>
-      {loading && (
-        <div className="mt-4">
-          <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
-            <div
-              className="bg-blue-600 h-2.5 rounded-full"
-              style={{ width: `${progress}%` }}
-            ></div>
-          </div>
-          <p className="text-center mt-2">
-            {progress.toFixed(2)}% ダウンロード完了
-          </p>
+        </label>
+      </div>
+      <button
+        onClick={handleDownload}
+        disabled={loading}
+        style={{ padding: "10px 20px" }}
+      >
+        {loading ? "Creating ZIP..." : "Download PDFs as ZIP"}
+      </button>
+
+      {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
+
+      {downloadLink && (
+        <div style={{ marginTop: "10px" }}>
+          <a href={downloadLink} download>
+            Click here to download your ZIP file
+          </a>
         </div>
       )}
     </div>
   );
-}
+};
+
+export default DownloadButton;
