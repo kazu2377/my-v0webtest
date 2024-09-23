@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
                 name: fileName,
               });
             } catch (err) {
-              console.error(`Error processing ${pdfUrl}:`, err);
+              console.error(`Error processiokng ${pdfUrl}:`, err);
             }
           })
         );
