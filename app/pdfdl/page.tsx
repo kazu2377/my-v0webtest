@@ -1,126 +1,173 @@
-// app/page.tsx
-
 "use client";
 
-import { FormEvent, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import JSZip from "jszip";
+import { useEffect, useRef, useState } from "react";
 
-const Home: React.FC = () => {
-  const [baseUrl, setBaseUrl] = useState<string>("https://jsite.mhlw.go.jp");
-  const [targetUrl, setTargetUrl] = useState<string>(
+export default function PDFDownloader() {
+  const [baseUrl, setBaseUrl] = useState("https://jsite.mhlw.go.jp");
+  const [targetUrl, setTargetUrl] = useState(
     "https://jsite.mhlw.go.jp/tokyo-roudoukyoku/newpage_00139.html"
   );
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
+  const [progress, setProgress] = useState(0);
+  const [totalFiles, setTotalFiles] = useState(0);
+  const [currentFile, setCurrentFile] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [error, setError] = useState("");
+  const [downloadedFiles, setDownloadedFiles] = useState<
+    { name: string; data: Uint8Array }[]
+  >([]);
+  const [isComplete, setIsComplete] = useState(false);
+  const downloadLinkRef = useRef<HTMLAnchorElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
-  const handleDownload = async (e: FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const startDownload = async () => {
+    setIsDownloading(true);
+    setProgress(0);
+    setTotalFiles(0);
+    setCurrentFile("");
     setError("");
+    setDownloadedFiles([]);
+    setIsComplete(false);
 
-    try {
-      const response = await fetch("/api/download", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ baseUrl, targetUrl }),
-      });
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
 
-      if (!response.ok) {
-        let errorMessage = "ダウンロード中にエラーが発生しました。";
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || errorMessage;
-        } catch (jsonError) {
-          console.error("JSONの解析に失敗しました:", jsonError);
-        }
-        throw new Error(errorMessage);
+    const encodedBaseUrl = encodeURIComponent(baseUrl);
+    const encodedTargetUrl = encodeURIComponent(targetUrl);
+    eventSourceRef.current = new EventSource(
+      `/api/download?baseUrl=${encodedBaseUrl}&targetUrl=${encodedTargetUrl}`
+    );
+
+    eventSourceRef.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log("Received event:", data);
+      switch (data.type) {
+        case "total":
+          setTotalFiles(data.count);
+          break;
+        case "progress":
+          setProgress((data.current / data.total) * 100);
+          setCurrentFile(
+            `${data.fileName} (${(data.fileSize / 1024 / 1024).toFixed(2)} MB)`
+          );
+          if (data.pdfData) {
+            setDownloadedFiles((prev) => [
+              ...prev,
+              { name: data.fileName, data: new Uint8Array(data.pdfData) },
+            ]);
+          }
+          break;
+        case "error":
+          setError((prev) => prev + "\n" + data.message);
+          break;
+        case "complete":
+          setIsComplete(true);
+          setIsDownloading(false);
+          closeEventSource();
+          console.log(
+            "Download complete. Total files:",
+            downloadedFiles.length
+          );
+          break;
       }
+    };
 
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(new Blob([blob]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", "pdf_files.zip");
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode?.removeChild(link);
-    } catch (err: any) {
-      setError(err.message);
-      console.error("ダウンロードエラー:", err);
-    } finally {
-      setLoading(false);
+    eventSourceRef.current.onerror = (err) => {
+      console.error("EventSource failed:", err);
+      setIsDownloading(false);
+      setError("An error occurred while downloading files. Please try again.");
+      closeEventSource();
+    };
+  };
+
+  const closeEventSource = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
   };
 
+  const downloadAllPDFs = async () => {
+    try {
+      const zip = new JSZip();
+      downloadedFiles.forEach((file) => {
+        zip.file(file.name, file.data);
+      });
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      if (downloadLinkRef.current) {
+        downloadLinkRef.current.href = url;
+        downloadLinkRef.current.download = "downloaded_pdfs.zip";
+        downloadLinkRef.current.click();
+      }
+    } catch (error) {
+      console.error("Error generating ZIP file:", error);
+      setError("Failed to generate ZIP file. Please try again.");
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      closeEventSource();
+      if (downloadLinkRef.current && downloadLinkRef.current.href) {
+        URL.revokeObjectURL(downloadLinkRef.current.href);
+      }
+    };
+  }, []);
+
   return (
-    <div style={styles.container}>
-      <h1>PDFダウンローダー</h1>
-      <form onSubmit={handleDownload}>
-        <div style={styles.formGroup}>
-          <label htmlFor="baseUrl">ベースURL:</label>
-          <input
-            id="baseUrl"
-            type="text"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            style={styles.input}
-            required
-          />
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">PDF Downloader</h1>
+      <div className="space-y-4">
+        <Input
+          type="text"
+          placeholder="Base URL"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+        />
+        <Input
+          type="text"
+          placeholder="Target URL"
+          value={targetUrl}
+          onChange={(e) => setTargetUrl(e.target.value)}
+        />
+        <Button onClick={startDownload} disabled={isDownloading}>
+          {isDownloading ? "Downloading..." : "Start Download"}
+        </Button>
+      </div>
+      {isDownloading && (
+        <div className="mt-4">
+          <Progress value={progress} className="w-full" />
+          <p className="mt-2">Downloading: {currentFile}</p>
+          <p>
+            Progress:{" "}
+            {totalFiles > 0
+              ? `${Math.round(progress)}% (${Math.round(
+                  (progress * totalFiles) / 100
+                )}/${totalFiles})`
+              : "0%"}
+          </p>
         </div>
-        <div style={styles.formGroup}>
-          <label htmlFor="targetUrl">ターゲットページURL：</label>
-          <input
-            id="targetUrl"
-            type="text"
-            value={targetUrl}
-            onChange={(e) => setTargetUrl(e.target.value)}
-            style={styles.input}
-            required
-          />
+      )}
+      {error && (
+        <p className="mt-4 text-red-500 whitespace-pre-line">{error}</p>
+      )}
+      {isComplete && (
+        <div className="mt-4">
+          <p className="text-green-500 font-bold">Download complete!</p>
+          <p>Total files downloaded: {downloadedFiles.length}</p>
+          {downloadedFiles.length > 0 && (
+            <Button onClick={downloadAllPDFs} className="mt-2">
+              Download All PDFs as ZIP
+            </Button>
+          )}
         </div>
-        {error && <p style={styles.error}>{error}</p>}
-        <button type="submit" style={styles.button} disabled={loading}>
-          {loading ? "ダウンロード中..." : "ダウンロード"}
-        </button>
-      </form>
+      )}
+      <a ref={downloadLinkRef} style={{ display: "none" }} />
     </div>
   );
-};
-
-const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    maxWidth: "600px",
-    margin: "50px auto",
-    padding: "20px",
-    textAlign: "center",
-    border: "1px solid #ccc",
-    borderRadius: "8px",
-    fontFamily: "Arial, sans-serif",
-  },
-  formGroup: {
-    margin: "20px 0",
-    textAlign: "left",
-  },
-  input: {
-    width: "100%",
-    padding: "10px",
-    marginTop: "5px",
-    borderRadius: "4px",
-    border: "1px solid #ccc",
-  },
-  button: {
-    padding: "10px 20px",
-    fontSize: "16px",
-    borderRadius: "4px",
-    border: "none",
-    backgroundColor: "#0070f3",
-    color: "#fff",
-    cursor: "pointer",
-  },
-  error: {
-    color: "red",
-  },
-};
-
-export default Home;
+}

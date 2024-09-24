@@ -1,73 +1,99 @@
-"use client"; // クライアントサイドでのレンダリングを有効化
+"use client";
 
-import { Button } from "@/components/ui/button"; // ボタンコンポーネントをインポート
-import { Progress } from "@/components/ui/progress"; // プログレスバーコンポーネントをインポート
-
-import { useEffect, useState } from "react"; // Reactのフックをインポート
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { useState } from "react";
 
 export default function Home() {
-  // メッセージの配列を管理するステート
-  const [messages, setMessages] = useState<string[]>([]);
-  // プログレスバーの進捗を管理するステート
+  const [baseUrl, setBaseUrl] = useState("");
+  const [targetUrl, setTargetUrl] = useState("");
   const [progress, setProgress] = useState(0);
-  // タスクが実行中かどうかを管理するステート
-  const [isRunning, setIsRunning] = useState(false);
+  const [totalFiles, setTotalFiles] = useState(0);
+  const [currentFile, setCurrentFile] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [error, setError] = useState("");
 
-  // タスクの実行を開始する関数
-  const startTasks = () => {
-    setIsRunning(true); // タスク実行中フラグを立てる
-    setMessages([]); // メッセージリストをリセット
-    setProgress(0); // プログレスをリセット
+  const startDownload = async () => {
+    setIsDownloading(true);
+    setProgress(0);
+    setTotalFiles(0);
+    setCurrentFile("");
+    setError("");
 
-    // サーバーからのイベントを受信するためのEventSourceを作成
-    const eventSource = new EventSource("/api/tasks");
+    const eventSource = new EventSource(
+      `/api/download?baseUrl=${encodeURIComponent(
+        baseUrl
+      )}&targetUrl=${encodeURIComponent(targetUrl)}`
+    );
 
-    // サーバーからメッセージを受信したときの処理
     eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data); // 受信データをパース
-      setMessages((prevMessages) => [...prevMessages, data.message]); // メッセージを追加
-      console.log(data.progress); // デバッグ用のログ出力
-      setProgress(data.progress); // プログレスを更新
+      const data = JSON.parse(event.data);
+      switch (data.type) {
+        case "total":
+          setTotalFiles(data.count);
+          break;
+        case "progress":
+          setProgress((data.current / data.total) * 100);
+          setCurrentFile(
+            `${data.fileName} (${(data.fileSize / 1024 / 1024).toFixed(2)} MB)`
+          );
+          break;
+        case "error":
+          setError(data.message);
+          break;
+        case "complete":
+          eventSource.close();
+          setIsDownloading(false);
+          break;
+      }
     };
 
-    // エラーが発生したときの処理
     eventSource.onerror = () => {
-      eventSource.close(); // EventSourceを閉じる
-      setIsRunning(false); // タスク実行中フラグを下ろす
+      eventSource.close();
+      setIsDownloading(false);
+      setError("An error occurred while downloading files");
     };
   };
 
-  // コンポーネントのクリーンアップ処理
-  useEffect(() => {
-    return () => {
-      if (isRunning) {
-        // タスク実行中であればEventSourceを閉じる
-        const eventSource = new EventSource("/api/tasks");
-        eventSource.close();
-      }
-    };
-  }, [isRunning]);
-
   return (
     <div className="container mx-auto p-4">
-      {/* タイトル */}
-      <h1 className="text-2xl font-bold mb-4">Non-Blocking Task Execution</h1>
-      {/* タスク開始ボタン */}
-      <Button onClick={startTasks} disabled={isRunning}>
-        {isRunning ? "Running..." : "Start Tasks"}
-      </Button>
-      {/* プログレスバー */}
-      <div className="mt-4">
-        <Progress value={progress} />
+      <h1 className="text-2xl font-bold mb-4">PDF Downloader</h1>
+      <div className="space-y-4">
+        <Input
+          type="text"
+          placeholder="Base URL"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+        />
+        <Input
+          type="text"
+          placeholder="Target URL"
+          value={targetUrl}
+          onChange={(e) => setTargetUrl(e.target.value)}
+        />
+        <Button
+          onClick={startDownload}
+          disabled={isDownloading || !baseUrl || !targetUrl}
+        >
+          {isDownloading ? "Downloading..." : "Start Download"}
+        </Button>
       </div>
-      {/* メッセージのリスト表示 */}
-      <ul className="mt-4 space-y-2">
-        {messages.map((message, index) => (
-          <li key={index} className="bg-gray-100 p-2 rounded">
-            {message}
-          </li>
-        ))}
-      </ul>
+      {isDownloading && (
+        <div className="mt-4">
+          <Progress value={progress} className="w-full" />
+          <p className="mt-2">Downloading: {currentFile}</p>
+          <p>
+            Progress:{" "}
+            {totalFiles > 0
+              ? `${Math.round(progress)}% (${Math.round(
+                  (progress * totalFiles) / 100
+                )}/${totalFiles})`
+              : "0%"}
+          </p>
+        </div>
+      )}
+      {error && <p className="mt-4 text-red-500">{error}</p>}
     </div>
   );
 }
